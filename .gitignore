@@ -1,0 +1,16 @@
+# Python virtual environments & bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+.venv/
+
+# PyInstaller build outputs (keep dist/PlotToDocx.exe tracked or ignored as needed)
+build/
+
+# IDE & OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
