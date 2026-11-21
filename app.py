@@ -6,6 +6,7 @@ import threading
 import traceback
 import tempfile
 import tkinter as tk
+import tkinter.font as tkfont
 from tkinter import ttk, filedialog, messagebox
 from pathlib import Path
 import customtkinter as ctk
@@ -273,6 +274,9 @@ class PlotToDocxApp(ctk.CTk):
         style.map("Treeview.Heading", background=[('active', '#144870')])
         style.map("Treeview", background=[('selected', '#1f6aa5')], foreground=[('selected', 'white')])
 
+        self._tree_font = tkfont.Font(family="Segoe UI", size=tree_font_px)
+        self._tree_font_bold = tkfont.Font(family="Segoe UI", size=tree_font_px, weight="bold")
+
         tree_container = tk.Frame(content_frame, bg=bg_col)
         tree_container.pack(fill="both", expand=True, padx=15, pady=(0, 8))
 
@@ -287,10 +291,10 @@ class PlotToDocxApp(ctk.CTk):
         self.tree.heading("size", text="File Size", anchor="e")
         self.tree.heading("full_path", text="Full Path", anchor="w")
 
-        self.tree.column("#0", width=380, minwidth=240)
-        self.tree.column("type", width=80, minwidth=60, anchor="center")
-        self.tree.column("size", width=90, minwidth=70, anchor="e")
-        self.tree.column("full_path", width=380, minwidth=200)
+        self.tree.column("#0", width=420, minwidth=240, stretch=False)
+        self.tree.column("type", width=55, minwidth=50, anchor="center", stretch=False)
+        self.tree.column("size", width=80, minwidth=70, anchor="e", stretch=False)
+        self.tree.column("full_path", width=900, minwidth=200, stretch=True)
 
         self.tree.bind("<ButtonRelease-1>", self._on_tree_click)
 
@@ -515,12 +519,45 @@ class PlotToDocxApp(ctk.CTk):
 
         self.after(0, lambda: self._finish_scan(total_images))
 
+    def _autosize_tree_columns(self):
+        header_text = {
+            "#0": "  Plot / Folder (Click checkbox to select)",
+            "type": "Type",
+            "size": "File Size",
+            "full_path": "Full Path",
+        }
+        widths = {col: self._tree_font_bold.measure(text) for col, text in header_text.items()}
+
+        indent_px = 20
+        indicator_px = 24
+        for node_id, node in self.node_info.items():
+            depth = 0
+            parent_id = self.parent_map.get(node_id)
+            while parent_id:
+                depth += 1
+                parent_id = self.parent_map.get(parent_id)
+
+            label = self._get_item_label(node["name"], node["type"], node["checked"])
+            name_w = self._tree_font.measure(label) + depth * indent_px + indicator_px
+            widths["#0"] = max(widths["#0"], name_w)
+            widths["type"] = max(widths["type"], self._tree_font.measure(self.tree.set(node_id, "type")))
+            widths["size"] = max(widths["size"], self._tree_font.measure(self.tree.set(node_id, "size")))
+            widths["full_path"] = max(widths["full_path"], self._tree_font.measure(self.tree.set(node_id, "full_path")))
+
+        cell_pad = 20
+        self.tree.column("#0", width=widths["#0"] + cell_pad, minwidth=120)
+        self.tree.column("type", width=widths["type"] + cell_pad, minwidth=40)
+        self.tree.column("size", width=widths["size"] + cell_pad, minwidth=40)
+        # Full Path stretches to fill leftover space; its width is the longest path so it scrolls only when needed
+        self.tree.column("full_path", width=widths["full_path"] + cell_pad, stretch=True)
+
     def _finish_scan(self, total_images):
         self.scanning = False
         self.scan_btn.configure(state="normal", text="Scan Plots")
         self.progress_bar.stop()
         self.progress_bar.configure(mode="determinate")
         self.progress_bar.set(1.0)
+        self._autosize_tree_columns()
         self._update_counts_display()
         self.status_lbl.configure(text=f"Indexed {total_images} plots. All selected by default.")
 
