@@ -12,7 +12,7 @@ A native Windows desktop application to batch index hydrodynamic plots (from loc
   - Multi-column side-by-side grid (**1 Column**, **2 Columns**, **3 Columns**) using borderless tables.
   - Sizing limits (**Max Width** and **Max Height** in cm) with **locked aspect ratio**.
 - **Page-Break Protection**: Keeps image and its corresponding caption (`Figure X\t{full_path}`) on the same page.
-- **Direct PDF Export**: One-click option to export matching PDF via Microsoft Word COM engine.
+- **High-resolution PDF Export**: Word renders the page layout, then the original-resolution images embedded in the DOCX are restored losslessly in the PDF, including transparency. Larger images can produce substantially larger DOCX and PDF files.
 - **Standalone `.exe`**: Ready to run on Windows without installing Python or dependencies.
 
 ---
@@ -43,6 +43,15 @@ pyinstaller --noconsole --onefile --collect-all customtkinter --hidden-import=wi
 ---
 
 ## Requirements
-- Windows 10/11
+- Windows 10/11; Microsoft Word must be installed for PDF export.
 - Python 3.10+ (if running from source)
-- Dependencies: `customtkinter`, `python-docx`, `pillow`, `pywin32`
+- Dependencies: `customtkinter`, `python-docx`, `pillow`, `pypdf`, `pywin32`
+
+PDF export requires Word to create a tagged PDF. If its output cannot be matched
+unambiguously to the document's plots, the application reports an error instead
+of saving a potentially incorrect PDF. The Word document remains available.
+
+## Tests
+
+Run `python -m unittest discover -s tests -v`. To also run the Windows and Word
+PDF integration tests, set `PLOT2DOCX_TEST_WORD=1` in the environment first.

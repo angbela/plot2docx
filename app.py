@@ -4,6 +4,7 @@ import io
 import datetime
 import threading
 import traceback
+import tempfile
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from pathlib import Path
@@ -16,6 +17,7 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_TABLE_ALIGNMENT, WD_ALIGN_VERTICAL
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
+from pdf_images import PLOT_TAG_PREFIX, restore_pdf_images
 
 # Windows COM for Word to PDF conversion
 try:
@@ -42,21 +44,42 @@ def lock_row_cant_split(row):
     trPr = row._tr.get_or_add_trPr()
     trPr.append(OxmlElement('w:cantSplit'))
 
+def prepare_image(img_path):
+    with Image.open(img_path) as image:
+        width, height = image.size
+        has_alpha = "A" in image.getbands() or "transparency" in image.info
+        stream = io.BytesIO()
+        image.convert("RGBA" if has_alpha else "RGB").save(stream, format="PNG")
+        stream.seek(0)
+    return width, height, stream
+
 def convert_docx_to_pdf_win32(docx_path, pdf_path):
-    """Use native installed Microsoft Word via COM to convert DOCX to 100% fidelity PDF."""
+    """Preserve Word's layout while restoring full-resolution images in the PDF."""
+    if not HAS_WIN32COM:
+        raise RuntimeError("PDF export requires pywin32 and Microsoft Word.")
     pythoncom.CoInitialize()
     word = None
     try:
-        word = win32com.client.Dispatch("Word.Application")
+        word = win32com.client.DispatchEx("Word.Application")
         word.Visible = False
-        doc = word.Documents.Open(os.path.abspath(docx_path))
-        # 17 = wdFormatPDF
-        doc.SaveAs(os.path.abspath(pdf_path), FileFormat=17)
-        doc.Close()
+        with tempfile.TemporaryDirectory(prefix=".plot2docx-", dir=os.path.dirname(os.path.abspath(pdf_path))) as temp_dir:
+            word_pdf = os.path.join(temp_dir, "word.pdf")
+            restored_pdf = os.path.join(temp_dir, "restored.pdf")
+            doc = word.Documents.Open(os.path.abspath(docx_path), ReadOnly=True, AddToRecentFiles=False)
+            try:
+                doc.ExportAsFixedFormat(
+                    OutputFileName=word_pdf, ExportFormat=17, OptimizeFor=0, DocStructureTags=True
+                )
+            finally:
+                doc.Close(False)
+            restore_pdf_images(docx_path, word_pdf, restored_pdf)
+            os.replace(restored_pdf, os.path.abspath(pdf_path))
     finally:
-        if word:
-            word.Quit()
-        pythoncom.CoUninitialize()
+        try:
+            if word:
+                word.Quit()
+        finally:
+            pythoncom.CoUninitialize()
 
 class PlotToDocxApp(ctk.CTk):
     def __init__(self):
@@ -228,20 +251,24 @@ class PlotToDocxApp(ctk.CTk):
         bg_col = "#2b2b2b" if is_dark else "#f9f9f9"
         fg_col = "white" if is_dark else "black"
 
+        # ttk fonts don't follow CustomTkinter's DPI scaling, so scale the tree font explicitly
+        ui_scale = ctk.ScalingTracker.get_widget_scaling(self)
+        tree_font_px = -round(14 * ui_scale)
+
         style.configure(
             "Treeview",
             background=bg_col,
             foreground=fg_col,
             fieldbackground=bg_col,
-            rowheight=24,
-            font=("Segoe UI", 10)
+            rowheight=round(28 * ui_scale),
+            font=("Segoe UI", tree_font_px)
         )
         style.configure(
             "Treeview.Heading",
             background="#1f6aa5",
             foreground="white",
             relief="flat",
-            font=("Segoe UI", 10, "bold")
+            font=("Segoe UI", tree_font_px, "bold")
         )
         style.map("Treeview.Heading", background=[('active', '#144870')])
         style.map("Treeview", background=[('selected', '#1f6aa5')], foreground=[('selected', 'white')])
@@ -646,14 +673,7 @@ class PlotToDocxApp(ctk.CTk):
                     self.after(0, lambda i=idx+1, p=pct: self._update_gen_progress(f"Processing plot {i} of {total}...", p))
 
                     try:
-                        with Image.open(img_p) as pil_img:
-                            orig_w, orig_h = pil_img.size
-                            img_stream = io.BytesIO()
-                            if pil_img.mode in ("RGBA", "LA") or (pil_img.mode == "P" and "transparency" in pil_img.info):
-                                pil_img.save(img_stream, format="PNG")
-                            else:
-                                pil_img.convert("RGB").save(img_stream, format="JPEG", quality=95)
-                            img_stream.seek(0)
+                        orig_w, orig_h, img_stream = prepare_image(img_p)
                     except Exception as img_err:
                         skipped_images.append((img_p, f"Cannot read image: {img_err}"))
                         continue
@@ -671,7 +691,8 @@ class PlotToDocxApp(ctk.CTk):
                         p_img.paragraph_format.keep_with_next = True
 
                         run_img = p_img.add_run()
-                        run_img.add_picture(img_stream, width=Cm(disp_w_cm), height=Cm(disp_h_cm))
+                        shape = run_img.add_picture(img_stream, width=Cm(disp_w_cm), height=Cm(disp_h_cm))
+                        shape._inline.docPr.set("descr", f"{PLOT_TAG_PREFIX}{fig_num}")
 
                         # Caption paragraph
                         p_cap = doc.add_paragraph()
@@ -724,14 +745,7 @@ class PlotToDocxApp(ctk.CTk):
 
                     for col_idx, img_p in enumerate(chunk):
                         try:
-                            with Image.open(img_p) as pil_img:
-                                orig_w, orig_h = pil_img.size
-                                img_stream = io.BytesIO()
-                                if pil_img.mode in ("RGBA", "LA") or (pil_img.mode == "P" and "transparency" in pil_img.info):
-                                    pil_img.save(img_stream, format="PNG")
-                                else:
-                                    pil_img.convert("RGB").save(img_stream, format="JPEG", quality=95)
-                                img_stream.seek(0)
+                            orig_w, orig_h, img_stream = prepare_image(img_p)
                         except Exception as img_err:
                             skipped_images.append((img_p, f"Cannot read image: {img_err}"))
                             continue
@@ -749,7 +763,8 @@ class PlotToDocxApp(ctk.CTk):
                             p_img.paragraph_format.keep_with_next = True
 
                             run_img = p_img.add_run()
-                            run_img.add_picture(img_stream, width=Cm(disp_w_cm), height=Cm(disp_h_cm))
+                            shape = run_img.add_picture(img_stream, width=Cm(disp_w_cm), height=Cm(disp_h_cm))
+                            shape._inline.docPr.set("descr", f"{PLOT_TAG_PREFIX}{fig_num}")
 
                             cell_cap = cap_row.cells[col_idx]
                             p_cap = cell_cap.paragraphs[0]
@@ -781,7 +796,13 @@ class PlotToDocxApp(ctk.CTk):
             if export_pdf:
                 self.after(0, lambda: self._update_gen_progress("Converting to PDF via Microsoft Word...", 0.9))
                 pdf_path = str(Path(save_file).with_suffix(".pdf"))
-                convert_docx_to_pdf_win32(save_file, pdf_path)
+                try:
+                    convert_docx_to_pdf_win32(save_file, pdf_path)
+                except Exception as pdf_err:
+                    raise RuntimeError(
+                        f"The Word document was saved to:\n{save_file}\n\n"
+                        f"High-resolution PDF export failed: {pdf_err}"
+                    ) from pdf_err
 
             successful_count = fig_num - 1
             self.after(0, lambda: self._finish_generation(True, save_file, pdf_path, successful_count, skipped_images))
