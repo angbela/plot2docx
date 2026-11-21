@@ -1,6 +1,6 @@
 # Plot to Docx
 
-A native Windows desktop application to batch index hydrodynamic plots (from local drives or network UNC paths, e.g. `\\HK-NC01\...`), select them via an interactive folder tree hierarchy with checkboxes, customize page layouts, and export them directly to Microsoft Word (`.docx`) and high-fidelity `.pdf`.
+A native Windows desktop application to batch index hydrodynamic plots (from local drives or network UNC paths, e.g. `\\WARTEG-PC\...`), select them via an interactive folder tree hierarchy with checkboxes, customize page layouts, and export them directly to Microsoft Word (`.docx`) and high-fidelity `.pdf`.
 
 ---
 
