@@ -50,8 +50,3 @@ pyinstaller --noconsole --onefile --collect-all customtkinter --hidden-import=wi
 PDF export requires Word to create a tagged PDF. If its output cannot be matched
 unambiguously to the document's plots, the application reports an error instead
 of saving a potentially incorrect PDF. The Word document remains available.
-
-## Tests
-
-Run `python -m unittest discover -s tests -v`. To also run the Windows and Word
-PDF integration tests, set `PLOT2DOCX_TEST_WORD=1` in the environment first.
