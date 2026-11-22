@@ -9,8 +9,14 @@ env/
 # PyInstaller build outputs (keep dist/PlotToDocx.exe tracked or ignored as needed)
 build/
 
+# Runtime selection snapshot (regenerated on scan)
+selection.json
+
 # IDE & OS files
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Test folders
+try/
