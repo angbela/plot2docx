@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Plot to Docx</title>
+  <script>
+    try {
+      var savedTheme = localStorage.getItem("plot2docx_theme");
+      var prefLight = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches;
+      document.documentElement.setAttribute("data-theme", savedTheme || (prefLight ? "light" : "dark"));
+    } catch (_) {}
+  </script>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <!-- Top Header & Navigation -->
+    <header class="topbar">
+      <div class="topbar-left">
+        <div class="brand">
+          <div>
+            <h1 class="brand-title">Plot to Docx</h1>
+            <p id="step-subtitle" class="brand-subtitle">Browse a local or UNC folder, select plots, then organize and export.</p>
+          </div>
+        </div>
+      </div>
+
+      <nav class="step-nav" aria-label="Workflow steps">
+        <button type="button" class="step-pill active" data-step="select" id="nav-select" aria-current="step">
+          <span class="step-num">1</span>
+          <span>Select Plots</span>
+          <span class="pill-badge" id="badge-selected-count">0</span>
+        </button>
+        <button type="button" class="step-pill" data-step="organize" id="nav-organize">
+          <span class="step-num">2</span>
+          <span>Organize &amp; Group</span>
+          <span class="pill-badge" id="badge-section-count">0</span>
+        </button>
+        <button type="button" class="step-pill" data-step="generate" id="nav-generate">
+          <span class="step-num">3</span>
+          <span>Generate</span>
+        </button>
+      </nav>
+
+      <div class="topbar-actions">
+        <div class="dropdown-wrap" id="recent-dropdown-wrap">
+          <button type="button" class="btn btn-secondary" id="btn-load-config" title="Load a saved project configuration">
+            Load Config
+          </button>
+          <button
+            type="button"
+            class="btn btn-secondary btn-caret"
+            id="btn-recent-menu"
+            title="Recent configurations"
+            aria-label="Recent configurations"
+            aria-expanded="false"
+            aria-haspopup="menu"
+            aria-controls="recent-menu"
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="square" aria-hidden="true">
+              <path d="M2.5 4.5L6 8l3.5-3.5"/>
+            </svg>
+          </button>
+          <div class="dropdown-menu hidden" id="recent-menu" role="menu"></div>
+        </div>
+        <button type="button" class="btn btn-secondary" id="btn-save-config" title="Save current sections, ordering, and layout options">
+          Save Config
+        </button>
+        <button type="button" class="btn btn-icon" id="btn-theme-toggle" title="Toggle Light / Dark theme" aria-label="Switch to light theme">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" aria-hidden="true">
+            <circle cx="8" cy="8" r="3"/>
+            <path d="M8 1.5v1.5M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M12.6 3.4l-1.1 1.1M4.5 11.5l-1.1 1.1"/>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Active Config Banner -->
+    <div id="config-banner" class="config-banner hidden">
+      <div class="config-banner-info">
+        <span class="tag tag-accent">Config</span>
+        <strong id="config-banner-name">Untitled</strong>
+        <span class="muted mono-text" id="config-banner-path"></span>
+        <span class="tag tag-warn hidden" id="config-missing-badge">0 missing</span>
+        <span class="tag tag-ok hidden" id="config-ok-badge">All files ready</span>
+      </div>
+      <div class="config-banner-actions">
+        <button type="button" class="btn btn-sm btn-secondary" id="btn-recheck-files">Re-check Files</button>
+        <button type="button" class="btn btn-sm btn-secondary" id="btn-remap-source">Change Source Folder</button>
+        <button type="button" class="btn btn-sm btn-ghost" id="btn-clear-config" title="Dismiss config banner" aria-label="Dismiss config banner">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="square" aria-hidden="true">
+            <path d="M2.5 2.5l7 7M9.5 2.5l-7 7"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      <!-- STEP 1: SELECT PLOTS -->
+      <section id="view-select" class="step-view active" aria-label="Select plots">
+        <div class="card path-card">
+          <div class="path-row">
+            <label for="folder-path-input" class="field-label">Plots Folder / UNC Path</label>
+            <div class="path-controls">
+              <input
+                id="folder-path-input"
+                type="text"
+                class="input path-input mono-text"
+                placeholder="e.g. C:\Projects\Plots or \\Server\Share\Plots"
+                spellcheck="false"
+              >
+              <button type="button" class="btn btn-secondary" id="btn-browse-folder">Browse...</button>
+              <button type="button" class="btn btn-primary" id="btn-open-folder" title="Load this folder immediately (expand subfolders on demand)">Open Folder</button>
+              <button type="button" class="btn btn-outline-primary" id="btn-deep-scan" title="Recursively scan all subfolders with safety limit">Deep Scan</button>
+            </div>
+          </div>
+          <p class="helper-text">
+            <strong>Open Folder</strong> loads fast by expanding subfolders only when clicked. <strong>Deep Scan</strong> indexes subfolders recursively with a 500-image safety pause.
+          </p>
+        </div>
+
+        <!-- Scan Progress / Guardrail Banner -->
+        <div id="scan-banner" class="card scan-banner hidden" aria-live="polite">
+          <div class="scan-banner-left">
+            <div class="spinner" id="scan-spinner" aria-hidden="true"></div>
+            <div>
+              <div id="scan-status-title" class="scan-title">Scanning...</div>
+              <div id="scan-status-detail" class="muted mono-text"></div>
+            </div>
+          </div>
+          <div class="scan-banner-actions">
+            <button type="button" class="btn btn-sm btn-primary hidden" id="btn-scan-continue">Continue Full Scan</button>
+            <button type="button" class="btn btn-sm btn-secondary hidden" id="btn-scan-keep">Keep Loaded</button>
+            <button type="button" class="btn btn-sm btn-danger" id="btn-scan-cancel">Cancel Scan</button>
+          </div>
+        </div>
+
+        <!-- Filter & Bulk Selection Toolbar -->
+        <div class="card tree-card">
+          <div class="tree-toolbar">
+            <div class="tree-toolbar-left">
+              <label for="select-filter-input" class="field-label-inline">Filter</label>
+              <input
+                id="select-filter-input"
+                type="search"
+                class="input filter-input"
+                placeholder="Filter loaded plots by name or folder..."
+              >
+              <span class="muted mono-text" id="loaded-stats-lbl">No folder opened yet.</span>
+            </div>
+            <div class="tree-toolbar-right">
+              <button type="button" class="btn btn-sm btn-secondary" id="btn-select-filtered" disabled>Select Filtered</button>
+              <button type="button" class="btn btn-sm btn-secondary" id="btn-select-all-loaded">Select All Loaded</button>
+              <button type="button" class="btn btn-sm btn-secondary" id="btn-deselect-all-loaded">Deselect All</button>
+              <button type="button" class="btn btn-sm btn-primary" id="btn-goto-organize">Continue to Organize</button>
+            </div>
+          </div>
+
+          <div id="tree-empty-state" class="empty-state">
+            <h2 class="empty-title">Open a plots folder to begin</h2>
+            <p>Enter a local or UNC path above, click <strong>Browse...</strong>, or use <strong>Load Config</strong> to reopen a saved report setup.</p>
+          </div>
+
+          <div id="tree-loading-state" class="empty-state hidden" role="status" aria-live="polite">
+            <div class="spinner" aria-hidden="true"></div>
+            <h2 class="empty-title">Loading folder contents...</h2>
+            <p id="tree-loading-detail" class="muted mono-text"></p>
+          </div>
+
+          <div id="tree-error-state" class="empty-state error-state hidden" role="alert">
+            <h2 class="empty-title">Could not open folder</h2>
+            <p id="tree-error-message" class="muted"></p>
+            <button type="button" class="btn btn-secondary" id="btn-tree-retry">Retry</button>
+          </div>
+
+          <div id="folder-tree-container" class="folder-tree-container hidden"></div>
+        </div>
+      </section>
+
+      <!-- STEP 2: ORGANIZE & GROUP -->
+      <section id="view-organize" class="step-view" aria-label="Organize and group plots">
+        <div class="card organize-topbar">
+          <div class="organize-topbar-left">
+            <span class="field-label-inline" id="lbl-grouping">Grouping</span>
+            <div class="segmented" id="grouping-segmented" role="group" aria-labelledby="lbl-grouping">
+              <button type="button" class="seg-btn active" data-mode="manual" aria-pressed="true">Manual Grouping</button>
+              <button type="button" class="seg-btn" data-mode="auto" aria-pressed="false">Auto-Group by Folder</button>
+              <button type="button" class="seg-btn" data-mode="flat" aria-pressed="false">No Grouping (Flat)</button>
+            </div>
+          </div>
+
+          <div class="organize-topbar-right">
+            <label for="org-search-input" class="field-label-inline">Find</label>
+            <input
+              id="org-search-input"
+              type="search"
+              class="input filter-input-sm"
+              placeholder="Plot name or path..."
+            >
+            <label class="toggle-chip" title="Show inline image thumbnails">
+              <input type="checkbox" id="chk-show-thumbs">
+              <span>Thumbnails</span>
+            </label>
+            <button type="button" class="btn btn-sm btn-secondary" id="btn-collapse-all">Collapse All</button>
+            <button type="button" class="btn btn-sm btn-secondary" id="btn-expand-all">Expand All</button>
+            <button type="button" class="btn btn-sm btn-primary" id="btn-add-section">+ Add Section</button>
+          </div>
+        </div>
+
+        <div id="organize-empty-state" class="card empty-state hidden">
+          <h2 class="empty-title">No plots selected yet</h2>
+          <p>Go to <strong>1. Select Plots</strong> to pick plots, or load a saved config.</p>
+          <button type="button" class="btn btn-primary" id="btn-back-to-select">Go to Select Plots</button>
+        </div>
+
+        <!-- Zero-flicker Sections Container -->
+        <div id="sections-container" class="sections-container"></div>
+
+        <!-- Sticky Bottom Bulk Action Toolbar -->
+        <div id="bulk-bar" class="bulk-bar">
+          <div class="bulk-bar-left">
+            <button type="button" class="btn btn-sm btn-secondary" id="btn-org-select-all">Select All</button>
+            <button type="button" class="btn btn-sm btn-secondary" id="btn-org-deselect-all">Deselect All</button>
+            <span class="bulk-count mono-text" id="org-checked-count">0 plots checked</span>
+            <span class="muted hint-drag">Drag handle or use arrows to reorder (checked plots move together)</span>
+          </div>
+          <div class="bulk-bar-right">
+            <button type="button" class="btn btn-sm btn-secondary" id="btn-bulk-up" disabled>Move Up</button>
+            <button type="button" class="btn btn-sm btn-secondary" id="btn-bulk-down" disabled>Move Down</button>
+            <select id="bulk-target-section" class="select-sm" disabled aria-label="Target section"></select>
+            <button type="button" class="btn btn-sm btn-primary" id="btn-bulk-move" disabled>Move Checked</button>
+            <button type="button" class="btn btn-sm btn-danger" id="btn-bulk-remove" disabled>Remove Checked</button>
+            <button type="button" class="btn btn-sm btn-success" id="btn-goto-generate">Continue to Generate</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- STEP 3: GENERATE DOCUMENT -->
+      <section id="view-generate" class="step-view" aria-label="Generate document">
+        <div class="gen-grid">
+          <div class="card gen-options-card">
+            <h2 class="card-title">Page Layout &amp; Output Options</h2>
+
+            <div class="options-grid">
+              <div class="option-group">
+                <span class="field-label" id="lbl-orientation">Page Orientation</span>
+                <div class="segmented" id="orient-segmented" role="group" aria-labelledby="lbl-orientation">
+                  <button type="button" class="seg-btn active" data-value="landscape" aria-pressed="true">Landscape</button>
+                  <button type="button" class="seg-btn" data-value="portrait" aria-pressed="false">Portrait</button>
+                </div>
+              </div>
+
+              <div class="option-group">
+                <span class="field-label" id="lbl-cols">Columns per Row</span>
+                <div class="segmented" id="cols-segmented" role="group" aria-labelledby="lbl-cols">
+                  <button type="button" class="seg-btn" data-value="1" aria-pressed="false">1 Column</button>
+                  <button type="button" class="seg-btn active" data-value="2" aria-pressed="true">2 Columns</button>
+                  <button type="button" class="seg-btn" data-value="3" aria-pressed="false">3 Columns</button>
+                </div>
+              </div>
+
+              <div class="option-group">
+                <label class="field-label" for="opt-max-width">Max Width (cm)</label>
+                <input id="opt-max-width" type="number" step="0.1" min="0.5" class="input" placeholder="Auto">
+              </div>
+
+              <div class="option-group">
+                <label class="field-label" for="opt-max-height">Max Height (cm)</label>
+                <input id="opt-max-height" type="number" step="0.1" min="0.5" class="input" placeholder="Auto">
+              </div>
+            </div>
+
+            <div class="format-options-card">
+              <span class="field-label">Output Formats</span>
+              <div class="format-row">
+                <label class="checkbox-label">
+                  <input type="checkbox" id="opt-export-docx" checked>
+                  <span><strong>Word Document (.docx)</strong></span>
+                </label>
+                <label class="checkbox-label">
+                  <input type="checkbox" id="opt-export-html">
+                  <span><strong>HTML Report (.html)</strong> (scrollable, links to disk/UNC images)</span>
+                </label>
+              </div>
+              <div id="html-embed-row" class="format-sub-row hidden">
+                <label class="checkbox-label">
+                  <input type="checkbox" id="opt-html-embed">
+                  <span>Embed images inside HTML (single portable file; larger size for high-res plots)</span>
+                </label>
+              </div>
+              <div class="format-sub-row">
+                <label class="checkbox-label">
+                  <input type="checkbox" id="opt-export-pdf">
+                  <span>Also export lossless high-resolution <strong>.pdf</strong> (via Microsoft Word)</span>
+                </label>
+                <span id="pdf-requires-docx-note" class="tag tag-warn hidden">Requires Word (.docx) output</span>
+                <span id="win32-warning" class="tag tag-warn hidden">Word COM unavailable on this host</span>
+              </div>
+            </div>
+
+            <div class="gen-actions">
+              <button type="button" class="btn btn-primary btn-lg" id="btn-generate-as">
+                Choose Output &amp; Generate (.docx)
+              </button>
+              <button type="button" class="btn btn-secondary btn-lg hidden" id="btn-quick-regen">
+                Quick Regenerate to Last Output
+              </button>
+            </div>
+            <div id="last-output-hint" class="helper-text mono-text hidden"></div>
+
+            <!-- Progress & Result -->
+            <div id="gen-progress-box" class="gen-progress-box hidden" aria-live="polite">
+              <div class="progress-track">
+                <div id="gen-progress-fill" class="progress-fill" style="width: 0%"></div>
+              </div>
+              <div id="gen-progress-text" class="muted">Preparing...</div>
+            </div>
+
+            <div id="gen-result-box" class="gen-result-box hidden" aria-live="polite"></div>
+          </div>
+
+          <div class="card gen-summary-card">
+            <div class="summary-header">
+              <h2 class="card-title">Report Structure &amp; File Check</h2>
+              <button type="button" class="btn btn-sm btn-secondary" id="btn-gen-recheck">Re-check Files</button>
+            </div>
+            <div id="gen-summary-stats" class="summary-stats"></div>
+            <div id="gen-missing-alert" class="alert-warn hidden"></div>
+            <div id="gen-section-list" class="gen-section-list"></div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Lightbox / Modal -->
+  <div id="modal-backdrop" class="modal-backdrop hidden">
+    <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <div class="modal-header">
+        <h3 id="modal-title">Dialog</h3>
+        <button type="button" class="btn btn-sm btn-ghost" id="modal-close" aria-label="Close dialog">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="square" aria-hidden="true">
+            <path d="M3 3l8 8M11 3l-8 8"/>
+          </svg>
+        </button>
+      </div>
+      <div id="modal-body" class="modal-body"></div>
+      <div id="modal-footer" class="modal-footer"></div>
+    </div>
+  </div>
+
+  <!-- Toast Notifications -->
+  <div id="toast-container" class="toast-container" aria-live="polite"></div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
